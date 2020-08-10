@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import root
 
 
 def calculate_attitude_angle(eccentricity_ratio):
@@ -208,6 +209,37 @@ def sommerfeld_number(modified_s, radius_stator, length):
     return (modified_s / np.pi) * (radius_stator * 2 / length) ** 2
 
 
+# def calculate_eccentricity_ratio(modified_s):
+#     """Calculate the eccentricity ratio for a given load using the sommerfeld number.
+#     Suitable only for short bearings.
+#     Parameters
+#     ----------
+#     modified_s: float
+#         The modified sommerfeld number.
+#     Returns
+#     -------
+#     float
+#         The eccentricity ratio.
+#     Examples
+#     --------
+#     >>> modified_s = 6.329494061103412
+#     >>> calculate_eccentricity_ratio(modified_s) # doctest: +ELLIPSIS
+#     0.04999...
+#     """
+#     coefficients = [
+#         1,
+#         -4,
+#         (6 - (modified_s ** 2) * (16 - np.pi ** 2)),
+#         -(4 + (np.pi ** 2) * (modified_s ** 2)),
+#         1,
+#     ]
+#     roots = np.roots(coefficients)
+#     for i in range(0, len(roots)):
+#         if 0 <= roots[i] <= 1:
+#             return np.sqrt(roots[i].real)
+#     raise ValueError("Eccentricity ratio could not be calculated.")
+
+
 def calculate_eccentricity_ratio(modified_s):
     """Calculate the eccentricity ratio for a given load using the sommerfeld number.
     Suitable only for short bearings.
@@ -232,11 +264,30 @@ def calculate_eccentricity_ratio(modified_s):
         -(4 + (np.pi ** 2) * (modified_s ** 2)),
         1,
     ]
-    roots = np.roots(coefficients)
-    for i in range(0, len(roots)):
-        if 0 <= roots[i] <= 1:
-            return np.sqrt(roots[i].real)
-    raise ValueError("Eccentricity ratio could not be calculated.")
+
+    roots = list(np.roots(coefficients))
+    # print(roots)
+
+    roots2 = roots.copy()
+    for i in roots2:
+        if not np.isreal(i):
+            roots.remove(i)
+    del roots2
+
+    roots.sort()
+    for i in range(len(roots)):
+        roots[i] = roots[i].real
+    # print(roots)
+
+    def f(x):
+        c = coefficients
+        return c[0]*x**4+c[1]*x**3+c[2]*x**2+c[3]*x**1+c[4]*x**0
+
+    for i in roots:
+        if 0 <= i <= 1:
+            roots = root(f, i, tol=1e-10).x[0]
+            # print(roots, np.sqrt(roots))
+            return np.sqrt(roots)
 
 
 def calculate_rotor_load(
