@@ -379,7 +379,7 @@ def find_equilibrium_position(
     """This function returns an eccentricity value with calculated forces matching the load applied,
     meaning an equilibrium position of the rotor.
     It first moves the rotor center on x-axis, aiming for the minimum error in the force on x (zero), then
-    moves on y-axis, aiming for the minimum error in the force on y (meaning load minus force on y equals zero).
+    moves on ygit checkout -b branchRoss1-axis, aiming for the minimum error in the force on y (meaning load minus force on y equals zero).
     Parameters
     ----------
     fluid_flow_object: A FluidFlow object.
@@ -556,3 +556,160 @@ def find_equilibrium_position(
         print(map_vector)
     if return_iteration_map:
         return map_vector
+
+
+def find_equilibrium_position2(
+    fluid_flow_object,
+    tolerance=1e-05,
+    max_iterations=10,
+    increment=1
+):
+
+    f = open('log.txt', 'w')
+    fluid_flow_object.calculate_coefficients()
+    fluid_flow_object.calculate_pressure_matrix_numerical()
+    r_force, t_force, force_x, force_y = calculate_oil_film_force(
+        fluid_flow_object, force_type="numerical"
+    )
+
+    error_x = abs(force_x)
+    error_y = abs(force_y - fluid_flow_object.load)
+    norma = error_x**2+error_y**2
+    k = 1
+    j = np.array([[0, 0], [0, 0]])
+
+    while norma > tolerance and k <= max_iterations:
+
+        move_rotor_center(fluid_flow_object, increment, 0)
+        fluid_flow_object.calculate_coefficients()
+        fluid_flow_object.calculate_pressure_matrix_numerical()
+        (
+            new_r_force,
+            new_t_force,
+            new_force_x,
+            new_force_y,
+        ) = calculate_oil_film_force(fluid_flow_object, force_type="numerical")
+        # j[0][0] = (new_force_x - force_x) / increment
+        # j[1][0] = (new_force_y - force_y) / increment
+        j[0][0] = (new_force_x - force_x)
+        j[1][0] = (new_force_y - force_y)
+        move_rotor_center(fluid_flow_object, -increment, 0)
+
+        move_rotor_center(fluid_flow_object, 0, increment)
+        fluid_flow_object.calculate_coefficients()
+        fluid_flow_object.calculate_pressure_matrix_numerical()
+        (
+            new_r_force,
+            new_t_force,
+            new_force_x,
+            new_force_y,
+        ) = calculate_oil_film_force(fluid_flow_object, force_type="numerical")
+        j[0][1] = (new_force_x - force_x)
+        j[1][1] = (new_force_y - force_y)
+        # j[0][1] = (new_force_x - force_x) / increment
+        # j[1][1] = (new_force_y - force_y) / increment
+        move_rotor_center(fluid_flow_object, 0, -increment)
+
+        # print(new_force_x - force_x, force_x, new_force_x)
+        axi = force_x * j[0][0] + (force_y - fluid_flow_object.load) * j[1][0]
+        ayi = force_x * j[0][1] + (force_y - fluid_flow_object.load) * j[1][1]
+
+        # print(axi, ayi)
+        axi /= -np.sqrt(axi**2+ayi**2)
+        ayi /= -np.sqrt(axi**2+ayi**2)
+        # print(axi, ayi)
+
+        move_rotor_center(fluid_flow_object, axi*increment, ayi*increment)
+
+        fluid_flow_object.calculate_coefficients()
+        fluid_flow_object.calculate_pressure_matrix_numerical()
+        (
+            new_r_force,
+            new_t_force,
+            new_force_x,
+            new_force_y,
+        ) = calculate_oil_film_force(fluid_flow_object, force_type="numerical")
+
+        new_error_x = abs(new_force_x)
+        new_error_y = abs(new_force_y-fluid_flow_object.load)
+        new_norma = new_error_x**2+new_error_y**2
+
+        print(str(axi) + ' ' + str(ayi) + '\n')
+        print(str(error_x) + ' ' + str(new_error_x) + ' ' + str(error_y) + ' ' +
+              str(new_error_y) + ' ' + str(new_norma) + ' ' + str(increment) +
+              ' ' + str(fluid_flow_object.xi) + ' ' + str(fluid_flow_object.yi) + '\n')
+        f.write(str(axi) + ' ' + str(ayi) + '\n')
+        f.write(str(error_x) + ' ' + str(new_error_x) + ' ' + str(error_y) + ' ' +
+                str(new_error_y) + ' ' + str(new_norma) + ' ' + str(increment) + '\n')
+        if new_norma < norma:
+            error = max(new_error_x, new_error_y)
+            force_x = new_force_x
+            force_y = new_force_y
+            error_x = new_error_x
+            error_y = new_error_y
+            norma = new_norma
+        else:
+            increment /= 2
+            move_rotor_center(fluid_flow_object, -axi*increment, -ayi*increment)
+            print(k, increment)
+        k = k + 1
+    f.close()
+
+
+def find_equilibrium_position3(
+    fluid_flow_object,
+    tolerance=1e-05,
+    max_iterations=10,
+    increment=1
+):
+
+    def f(x):
+        fluid_flow_object.xi = x[0]
+        fluid_flow_object.yi = x[1]
+        fluid_flow_object.calculate_coefficients()
+        fluid_flow_object.calculate_pressure_matrix_numerical()
+        r_force, t_force, force_x, force_y = calculate_oil_film_force(
+            fluid_flow_object, force_type="numerical"
+        )
+        error_x = abs(force_x)
+        error_y = abs(force_y - fluid_flow_object.load)
+        return error_x**2+error_y**2
+
+    # scipy.optimize.differential_evolution(func, bounds, args=(), strategy='best1bin', maxiter=1000, popsize=15,
+    # tol=0.01, mutation=0.5, 1, recombination=0.7, seed=None, callback=None,
+    # disp=False, polish=True, init='latinhypercube', atol=0, updating='immediate',
+    # workers=1, constraints=())[source]¶
+    rc = fluid_flow_object.radial_clearance
+    print(rc, fluid_flow_object.radius_stator, fluid_flow_object.radius_rotor, fluid_flow_object.radius_stator - fluid_flow_object.radius_rotor)
+    exit(0)
+    re = fluid_flow_object.radius_stator
+    a = optimize.differential_evolution(f, [(-rc, rc), (-rc, rc)], maxiter=10)
+    return a.x
+
+
+def find_equilibrium_position4(
+    fluid_flow_object,
+    tolerance=1e-05,
+    max_iterations=10,
+    increment=1
+):
+
+    def f(x):
+        fluid_flow_object.xi = x[0]
+        fluid_flow_object.yi = x[1]
+        fluid_flow_object.calculate_coefficients()
+        fluid_flow_object.calculate_pressure_matrix_numerical()
+        r_force, t_force, force_x, force_y = calculate_oil_film_force(
+            fluid_flow_object, force_type="numerical"
+        )
+        error_x = abs(force_x)
+        error_y = abs(force_y - fluid_flow_object.load)
+        return error_x**2, error_y**2
+
+    rc = fluid_flow_object.radial_clearance
+    print(rc, fluid_flow_object.radius_stator, fluid_flow_object.radius_rotor,
+          fluid_flow_object.radius_stator - fluid_flow_object.radius_rotor)
+    re = fluid_flow_object.radius_stator
+    a = optimize.fsolve(f, x0=[0, 0])
+    return a
+
